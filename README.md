@@ -1,22 +1,142 @@
-# Welcome to Remix!
+# Sample of Server Side Rendering (SSR) with fetch in a component
 
-- [Remix Docs](https://remix.run/docs)
+- [Demo](https://remix-test04.pages.dev/)
 
-## Development
+# Sample code
 
-You will be utilizing Wrangler for local development to emulate the Cloudflare runtime. This is already wired up in your package.json as the `dev` script:
+- \_index.tsx
 
-```sh
-# start the remix dev server and wrangler
-npm run dev
+```tsx
+import { Link } from "@remix-run/react";
+import { useSSR } from "next-ssr";
+
+interface Center {
+  name: string;
+  enName: string;
+  officeName?: string;
+  children?: string[];
+  parent?: string;
+  kana?: string;
+}
+interface Centers {
+  [key: string]: Center;
+}
+interface Area {
+  centers: Centers;
+  offices: Centers;
+  class10s: Centers;
+  class15s: Centers;
+  class20s: Centers;
+}
+
+/**
+ * Page display components
+ */
+const Page = () => {
+  const { data, reload } = useSSR<Area | null | undefined>(
+    async () =>
+      fetch(`https://www.jma.go.jp/bosai/common/const/area.json`).then((r) =>
+        r.json()
+      ),
+    { key: "area" }
+  );
+
+  return (
+    <div>
+      <div>
+        <a href="https://github.com/SoraKumo001/remix-test04">Source code</a>
+      </div>
+      <button onClick={() => reload()}>Reload</button>
+      {data &&
+        Object.entries(data.offices).map(([code, { name }]) => (
+          <div key={code}>
+            <Link to={`/weather/${code}`}>{name}</Link>
+          </div>
+        ))}
+    </div>
+  );
+};
+export default Page;
 ```
 
-Open up [http://127.0.0.1:8788](http://127.0.0.1:8788) and you should be ready to go!
+- weatehr.$code.tsx
 
-## Deployment
+```tsx
+import { useParams } from "@remix-run/react";
+import { useSSR } from "next-ssr";
 
-Cloudflare Pages are currently only deployable through their Git provider integrations.
+export interface WeatherType {
+  publishingOffice: string;
+  reportDatetime: string;
+  targetArea: string;
+  headlineText: string;
+  text: string;
+}
 
-If you don't already have an account, then [create a Cloudflare account here](https://dash.cloudflare.com/sign-up/pages) and after verifying your email address with Cloudflare, go to your dashboard and follow the [Cloudflare Pages deployment guide](https://developers.cloudflare.com/pages/framework-guides/deploy-anything).
+/**
+ * Components for displaying weather information
+ */
+const Weather = ({ code }: { code: number }) => {
+  const { data, reload, isLoading } = useSSR<WeatherType>(
+    () =>
+      fetch(
+        `https://www.jma.go.jp/bosai/forecast/data/overview_forecast/${code}.json`
+      )
+        .then((r) => r.json())
+        .then(
+          // Additional weights (100 ms)
+          (r) =>
+            new Promise((resolve) =>
+              setTimeout(() => resolve(r as WeatherType), 100)
+            )
+        ),
+    { key: code }
+  );
+  if (!data) return <div>loading</div>;
+  const { targetArea, reportDatetime, headlineText, text } = data;
+  return (
+    <div
+      style={
+        isLoading ? { background: "gray", position: "relative" } : undefined
+      }
+    >
+      {isLoading && (
+        <div
+          style={{
+            position: "absolute",
+            color: "white",
+            top: "50%",
+            left: "50%",
+          }}
+        >
+          loading
+        </div>
+      )}
+      <h1>{targetArea}</h1>
+      <button onClick={reload}>Reload</button>
+      <div>
+        {new Date(reportDatetime).toLocaleString("ja-JP", {
+          timeZone: "JST",
+        })}
+      </div>
+      <div>{headlineText}</div>
+      <div style={{ whiteSpace: "pre-wrap" }}>{text}</div>
+    </div>
+  );
+};
 
-Configure the "Build command" should be set to `npm run build`, and the "Build output directory" should be set to `public`.
+/**
+ * Page display components
+ */
+
+const Page = () => {
+  const params = useParams();
+  const code = params.code;
+  return (
+    <>
+      <Weather code={Number(code)} />
+    </>
+  );
+};
+export default Page;
+```
